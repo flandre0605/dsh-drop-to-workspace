@@ -1,7 +1,7 @@
 {
   "name": "dsh-drop-to-workspace",
   "version": "0.1.0",
-  "description": "把文件夹从文件资源管理器拖到 DeepSeek Harness 侧边栏，即可创建并打开一个绑定该目录的工作区",
+  "description": "拖放文件夹到 DeepSeek Harness 侧边栏创建并打开工作区；桌面端直接绑定目录，网页端确认主机路径后绑定，不上传文件夹",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
