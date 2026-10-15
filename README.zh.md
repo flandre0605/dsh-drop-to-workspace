@@ -34,15 +34,43 @@
 
 ## 安装
 
-通过 DSH CLI 安装（安装后需重启桌面端，profile 才能加载新 bundle）：
+本插件只在桌面端有意义（见上节），所以要装到 **desktop** profile。
 
-```powershell
-dsh plugin --profile web add C:\path\to\dsh-drop-to-workspace
+**方式一：插件面板**
+
+设置 → 插件 → 添加插件，填入：
+
+```
+github:flandre0605/dsh-drop-to-workspace
 ```
 
-该命令会将 `dsh.profile.bundles` 与已安装插件核对，把 `dsh-drop-to-workspace`
+完整地址 `https://github.com/flandre0605/dsh-drop-to-workspace` 同样识别。
+
+**方式二：CLI**
+
+```powershell
+dsh plugin --profile desktop add github:flandre0605/dsh-drop-to-workspace
+```
+
+两种方式都需**完全退出并重启桌面端**，profile 才会加载新 bundle。
+
+安装命令会将 `dsh.profile.bundles` 与已安装插件核对，把 `dsh-drop-to-workspace`
 追加到 bundle 栈；profile 启动时再合并插件自带的 `cordis.patch.yml`，插入
 `drop-to-workspace` 加载行。
+
+> 从 Git 仓库安装得到的是**快照副本**，改代码不会自动生效。要边改边试，改用本地
+> 路径安装：`dsh plugin --profile desktop add C:\path\to\dsh-drop-to-workspace`
+> （`link:` 引用，重启后即加载当前文件）。
+
+> 安装前插件管理器会先跑一次 `git ls-remote` 连通性检查。若它报“无法访问 GitHub”，
+> 通常是本机 git 没有走代理（git 不读 Windows 系统代理）：
+>
+> ```powershell
+> git config --global http.proxy  http://127.0.0.1:7897
+> git config --global https.proxy http://127.0.0.1:7897
+> ```
+>
+> 端口换成自己代理的实际端口。
 
 ## 目录结构
 
