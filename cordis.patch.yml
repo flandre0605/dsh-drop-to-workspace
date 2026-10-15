@@ -1,0 +1,13 @@
+# dsh-drop-to-workspace bundle patch
+#
+# When this plugin is installed through the official CLI —
+#
+#   dsh plugin --profile web add <path-to-dsh-drop-to-workspace>
+#
+# — the command reconciles `dsh.profile.bundles` against installed packages
+# and, seeing this declaration, appends `dsh-drop-to-workspace` to the bundle
+# stack. The profile boot then merges THIS patch (a single `insert` of the
+# plugin row) exactly like a manual cordis.patch.yml mount line.
+- insert:
+    - id: drop-to-workspace
+      name: 'dsh-drop-to-workspace'

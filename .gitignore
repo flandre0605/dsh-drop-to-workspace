@@ -1,0 +1,15 @@
+# dependencies
+node_modules/
+
+# dsh profile scratch
+.dsh/
+
+# editors / OS
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# build / test scratch
+*.log
