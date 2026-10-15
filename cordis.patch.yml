@@ -2,12 +2,15 @@
 #
 # When this plugin is installed through the official CLI —
 #
-#   dsh plugin --profile web add <path-to-dsh-drop-to-workspace>
+#   dsh plugin --profile desktop add github:flandre0605/dsh-drop-to-workspace
 #
 # — the command reconciles `dsh.profile.bundles` against installed packages
 # and, seeing this declaration, appends `dsh-drop-to-workspace` to the bundle
 # stack. The profile boot then merges THIS patch (a single `insert` of the
 # plugin row) exactly like a manual cordis.patch.yml mount line.
+#
+# The profile is `desktop` because the plugin needs the Electron shell's
+# `window.__DSH_HOST_PATHS__` bridge to learn a dropped folder's host path.
 - insert:
     - id: drop-to-workspace
       name: 'dsh-drop-to-workspace'
