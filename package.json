@@ -1,7 +1,7 @@
 {
   "name": "dsh-drop-to-workspace",
   "version": "0.1.0",
-  "description": "Drop folders from your file manager onto the DeepSeek Harness window to create workspaces bound to those directories",
+  "description": "把文件夹从文件资源管理器拖到 DeepSeek Harness 侧边栏，即可创建并打开一个绑定该目录的工作区",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -32,7 +32,7 @@
     "lib/client.js",
     "cordis.patch.yml",
     "README.md",
-    "README.zh.md",
+    "README.en.md",
     "LICENSE"
   ],
   "license": "MIT"

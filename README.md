@@ -1,143 +1,116 @@
-# dsh-drop-to-workspace
+# dsh-drop-to-workspace（拖放文件夹创建工作区）
 
-Drag a folder from your file manager onto the sidebar's **Workspaces** region
-and a Workspace bound to that directory is created and opened — the same result
-as picking the folder through the built-in Workspace picker, without leaving
-the window.
+**中文** | [English](README.en.md)
 
-## What it does
+把文件资源管理器里的文件夹直接拖到侧边栏的**工作区**区域，即可创建并打开一个绑定该目录的
+工作区——效果与用内置工作区选择器选文件夹完全一致，但全程不用离开窗口。
 
-- **Hover feedback follows the available metadata.** Identifiable files keep
-  the native attachment mask; identifiable folders show the compact
-  "Folder detected · <name>" card without dimming. Browsers normally protect
-  entries during hover, so `webkitGetAsEntry()` returns null. Unresolved items
-  without a MIME type show a neutral "Files or folders" hint, covering both
-  folders and files whose type is unknown without misclassifying either.
-- Hovering the Workspaces region (section header + the grouped/flat list) with
-  a folder turns that card into a dashed invitation drawn over the region
-  itself: "Release to create a workspace", or the conditional
-  "Release folders to create a workspace" when the type is still unknown.
-- On drop there, each folder's real host path is resolved and
-  `workspaces.create({ path })` runs per folder; the first created Workspace
-  opens immediately. Dropping a folder that is already a Workspace just
-  re-opens it (host-side `resolveByPath` is idempotent).
-- **Releasing outside that region changes nothing.** A folder released on the
-  chat, the composer, or anywhere else is handled by the shipped attachment
-  intake exactly as before. Ordinary file drops are unchanged; unresolved
-  hover events use the neutral hint.
+## 功能
 
-## Why the drop is scoped
+- **拖动提示跟随可读取的信息切换。** 已识别的普通文件保持原生附件遮罩；已识别的文件夹
+  显示顶部紧凑提示卡“检测到文件夹 · 名称”，不压暗背景。浏览器在悬停阶段通常不允许
+  `webkitGetAsEntry()` 读取条目；类型未知且没有 MIME 类型时显示中性的“文件或文件夹”
+  提示，避免把文件夹误显示为图片附件，也不会把没有扩展名的文件误判为文件夹。
+- 把文件夹拖到工作区区域（分区标题 + 分组/平铺列表）上方时，提示卡会变成该区域上的虚线
+  邀请框：“松开以创建新工作区”；类型尚未确定时显示“松开文件夹以创建新工作区”。
+- 在此松开后解析每个文件夹的真实主机路径，逐个调用 `workspaces.create({ path })`，
+  并立即打开第一个创建的工作区。拖入已存在的工作区文件夹只会重新打开它
+  （宿主端 `resolveByPath` 幂等）。
+- **在该区域之外松开不改变任何行为。** 拖到对话区、输入框或任何其他地方再松开的文件夹，
+  仍由原生附件流程按原样处理；普通文件的松开处理也保持原样，类型未知的悬停使用中性提示。
 
-The plugin consumes a folder drop only inside the Workspaces region. Its
-listeners are capture-phase on `document` and call `stopImmediatePropagation`,
-so a folder dropped there never reaches the attachment intake or the composer
-— but that interception is gated on the pointer actually being over the
-region. The shipped intake decides whether it accepts a release from its own
-static `canAcceptDrop` gate rather than from the hover state this plugin
-suppresses, so a folder released elsewhere still takes the ordinary path.
+## 为什么限定在区域内
 
-## Desktop only
+插件只在工作区区域内消费文件夹拖放。监听器挂在 `document` 捕获阶段并调用
+`stopImmediatePropagation`，因此拖到该区域的文件夹不会到达附件处理流程或输入框——
+但这一拦截以“指针确实位于该区域之上”为前提。原生附件流程判断是否接受松开，依据的是它
+自己安装监听器时捕获得来的静态 `canAcceptDrop`，而不是被本插件压制的悬停状态，所以在
+其他位置松开仍然走原有路径。
 
-Learning a dropped folder's absolute host path requires the Electron shell
-bridge (`window.__DSH_HOST_PATHS__`), which the packaged desktop app injects
-and an external browser page does not have. Outside the desktop app the plugin
-stays inert and folder drops fall through to the stock "desktop-only" notice
-from the attachment plugin.
+## 仅桌面端
 
-## Install
+获取被拖入文件夹的绝对主机路径依赖 Electron 壳注入的桥
+（`window.__DSH_HOST_PATHS__`）。桌面版会注入该桥，外部浏览器页面没有。因此在
+桌面版之外，插件保持静默，文件夹拖放会回退到附件插件原有的“仅桌面端支持添加
+文件夹”提示。
 
-The plugin is only meaningful in the desktop app (see above), so it belongs in
-the **desktop** profile.
+## 安装
 
-**Through the plugin panel**
+本插件只在桌面端有意义（见上节），所以要装到 **desktop** profile。
 
-Settings → Plugins → Add plugin, and enter:
+**方式一：插件面板**
+
+设置 → 插件 → 添加插件，填入：
 
 ```
 github:flandre0605/dsh-drop-to-workspace
 ```
 
-The full address `https://github.com/flandre0605/dsh-drop-to-workspace` works too.
+完整地址 `https://github.com/flandre0605/dsh-drop-to-workspace` 同样识别。
 
-**Through the CLI**
+**方式二：CLI**
 
 ```powershell
 dsh plugin --profile desktop add github:flandre0605/dsh-drop-to-workspace
 ```
 
-Either way the desktop app must be **fully restarted** afterwards so the profile
-reboots with the new bundle.
+两种方式都需**完全退出并重启桌面端**，profile 才会加载新 bundle。
 
-The command reconciles `dsh.profile.bundles` against installed packages and
-appends `dsh-drop-to-workspace` to the bundle stack; the profile boot then
-merges the plugin's `cordis.patch.yml`, inserting the `drop-to-workspace`
-loader row.
+安装命令会将 `dsh.profile.bundles` 与已安装插件核对，把 `dsh-drop-to-workspace`
+追加到 bundle 栈；profile 启动时再合并插件自带的 `cordis.patch.yml`，插入
+`drop-to-workspace` 加载行。
 
-> A git install is a **snapshot copy**: edits to the source do not take effect.
-> To iterate on the code, install the local path instead —
-> `dsh plugin --profile desktop add C:\path\to\dsh-drop-to-workspace` — which
-> records a `link:` reference and picks up the current files on restart.
+> 从 Git 仓库安装得到的是**快照副本**，改代码不会自动生效。要边改边试，改用本地
+> 路径安装：`dsh plugin --profile desktop add C:\path\to\dsh-drop-to-workspace`
+> （`link:` 引用，重启后即加载当前文件）。
 
-> Before installing, the plugin manager runs a `git ls-remote` reachability
-> check. If it reports "Cannot access GitHub", the usual cause is that git is
-> not using your proxy (git does not read the Windows system proxy):
+> 安装前插件管理器会先跑一次 `git ls-remote` 连通性检查。若它报“无法访问 GitHub”，
+> 通常是本机 git 没有走代理（git 不读 Windows 系统代理）：
 >
 > ```powershell
 > git config --global http.proxy  http://127.0.0.1:7897
 > git config --global https.proxy http://127.0.0.1:7897
 > ```
 >
-> Substitute your proxy's actual port.
+> 端口换成自己代理的实际端口。
 
-## Structure
+## 目录结构
 
-| File | Role |
+| 文件 | 作用 |
 | --- | --- |
-| `lib/index.js` | Host half — empty `apply()` so the plugin appears in the host Loader |
-| `lib/client.js` | Browser half — region detection, drop interception, zone slot, dictionary seat |
-| `cordis.patch.yml` | Bundle patch inserting the loader row |
-| `package.json` | `dsh.bundle.patch` + `dsh.client` (web platform, service inject list) |
-| `test/smoke.mjs` | Zone-scoping and wiring test (node, fake DOM) |
+| `lib/index.js` | 宿主半边——空 `apply()`，让插件出现在宿主 Loader 中 |
+| `lib/client.js` | 浏览器半边——区域识别、拖放拦截、提示框 slot、字典注册 |
+| `cordis.patch.yml` | bundle patch，插入加载行 |
+| `package.json` | `dsh.bundle.patch` + `dsh.client`（web 平台、服务 inject 列表） |
+| `test/smoke.mjs` | 区域识别与接线测试（node + 假 DOM） |
 
-## How the region is recognised
+## 区域如何被识别
 
-The sidebar's Workspaces region is matched structurally rather than by
-geometry:
+侧边栏工作区区域按结构识别，而非按坐标：
 
-- **the primary anchor is the slot outlet**: the shell wraps every slot outlet
-  in a `data-slot="<declared name>"` div (`display: contents`), and the region
-  is `[data-slot="sidebar.workspaces"]`. That value is the declared slot name,
-  so it survives CSS-module hash churn and is present both in the expanded list
-  and in the collapsed rail. The outlet itself has no box, so the invitation's
-  geometry comes from the region's own root element inside it (the shipped
-  browser's outermost div);
-- **the structural fallback** (for a shell that renders the region without an
-  outlet) is the region's tree — the shipped browser draws the workspace/session
-  list as `role="tree"` with `data-row-key` rows — plus its own CSS-module
-  containers (`_sectionHeader`, `_listArea`, `_treeBody`, `_searchTree`,
-  `_groupSection`, `_flatList`), which cover the header strip and the list
-  padding. A CSS-module class is `<build hash>_<key>`, so the readable key
-  suffix survives rebuilds while the hash does not; a candidate only counts when
-  the region root also owns keyed rows, so a same-named container elsewhere in
-  the app — including a panel that draws `role="tree"` rows without
-  `data-row-key` — cannot match.
+- **主锚点是 slot 出口**：壳给每个 slot 出口包一层 `data-slot="<槽位名>"`
+  （`display: contents`），工作区区域就是 `[data-slot="sidebar.workspaces"]`。
+  这个属性值是声明的槽位名，不随 CSS Module 哈希变化，展开列表和收起窄条两种状态下都在。
+  出口本身没有盒子，邀请框的几何取自其内部区域自身的根元素（内置浏览器最外层那个 div）。
+- **结构回退**（壳不经过出口渲染该区域时）：它的树是语义锚点——内置浏览器把
+  工作区/会话列表渲染为 `role="tree"`，行元素带 `data-row-key`；它自身的 CSS Module
+  容器（`_sectionHeader`、`_listArea`、`_treeBody`、`_searchTree`、`_groupSection`、
+  `_flatList`）覆盖分区标题条与列表内边距。CSS Module 类名形如
+  `<构建哈希>_<语义名>`，哈希每次构建都变，语义后缀稳定；候选元素还需满足“区域根节点自身
+  拥有带键行”，因此应用内其他位置同名容器（包括同样画 `role="tree"` 但不带
+  `data-row-key` 的面板）不会被误判。
 
-A miss degrades quietly: if a future build renames those anchors, hover
-highlighting stops but dropping still works through the structural fallback,
-and no other part of the app is affected.
+识别失败时是静默降级：若未来构建改名了这些锚点，悬停高亮会失效，但拖放仍能通过结构回退
+工作，应用其他部分不受任何影响。
 
-## Theming
+## 主题
 
-Only the published theme tokens are used (`--dsw-alias-brand-primary`,
-`--dsw-alias-bg-overlay`, `--dsw-alias-border-l2`, `--dsw-alias-label-primary`,
-`--dsw-alias-label-secondary`); geometry and type are plain CSS, so the box
-follows light/dark themes without depending on internal design tokens.
+只使用公开的主题 token（`--dsw-alias-brand-primary`、`--dsw-alias-bg-overlay`、
+`--dsw-alias-border-l2`、`--dsw-alias-label-primary`、`--dsw-alias-label-secondary`），
+几何与字体使用普通 CSS，因此提示框能跟随明暗主题，且不依赖内部设计 token。
 
-## Behavior notes
+## 行为说明
 
-- Multiple folders in one drop create multiple Workspaces; the first one opens
-  (the main view switches to it).
-- A mixed file + folder drop inside the region creates Workspaces for the
-  folders and skips the files (that drop is fully consumed).
-- A refused create (e.g. an unreachable path) shows a localized failure toast;
-  the folder simply does not become a Workspace.
+- 一次拖入多个文件夹会创建多个工作区；第一个会被打开（主视图切换到它）。
+- 在区域内拖入文件 + 文件夹混合内容时，文件夹会创建工作区，文件被跳过（该次拖放被完整消费）。
+- 创建被拒绝（例如路径不可达）时显示本地化的失败 toast，该文件夹不会成为工作区。
