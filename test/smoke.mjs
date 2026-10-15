@@ -7,6 +7,7 @@
 //   2. hover feedback — protected entries show a neutral hint, never a false
 //      folder claim, while identifiable files keep the native affordance.
 import { readFileSync } from 'node:fs'
+import { mock } from 'node:test'
 
 const clientSrc = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
 
@@ -113,13 +114,17 @@ let registration
 const documentListeners = new Map()
 const windowListeners = new Map()
 const collect = (map) => (type, handler) => map.set(type, handler)
+const remove = (map) => (type, handler) => {
+  if (map.get(type) === handler) map.delete(type)
+}
+const effectCleanups = []
 
 globalThis.window = {
   __ModuleLoader__: { load: (reg) => { registration = reg } },
   innerWidth: 1580,
   innerHeight: 1019,
   addEventListener: collect(windowListeners),
-  removeEventListener: () => {},
+  removeEventListener: remove(windowListeners),
 }
 globalThis.document = {
   documentElement,
@@ -128,7 +133,7 @@ globalThis.document = {
   head: { appendChild() {} },
   querySelector: () => null,
   addEventListener: collect(documentListeners),
-  removeEventListener: () => {},
+  removeEventListener: remove(documentListeners),
 }
 
 new Function(clientSrc)()
@@ -186,7 +191,11 @@ const ctx = {
     inject: (name, generator) => slotRegistrations.push({ name, generator }),
     register: (options, component) => ({ options, component }),
   },
-  effect: (setup) => setup(),
+  effect: (setup) => {
+    const cleanup = setup()
+    if (typeof cleanup === 'function') effectCleanups.push(cleanup)
+    return cleanup
+  },
 }
 mod.apply(ctx)
 
@@ -328,6 +337,64 @@ ev = fire(drop, dragEvent(workspaceRow, [fileItem('no-extension')]))
 check('an unresolved hover does not consume an ordinary file drop', ev.calls.prevented === 0 && ev.calls.stopped === 0 && createCalls.length === 0 && snapshot().pending === false)
 //#endregion
 
+//#region cancelled external drags
+const dragIsIdle = () => !snapshot().pending && !snapshot().folder && !snapshot().active && snapshot().rect === null && snapshot().names === ''
+const leave = documentListeners.get('dragleave')
+
+fire(hover, protectedHover(workspaceRow))
+const internalLeave = dragEvent(textarea, [])
+internalLeave.relatedTarget = workspaceRow
+fire(leave, internalLeave)
+check('moving between page elements keeps the drag hint', snapshot().pending === true)
+
+const cancelledLeave = dragEvent(workspaceRow, [], { clientX: 0 })
+cancelledLeave.dataTransfer = null
+fire(leave, cancelledLeave)
+check('leaving from a child without file metadata clears the hint', dragIsIdle())
+
+fire(hover, protectedHover(workspaceRow))
+const rootLeave = dragEvent(body, [])
+rootLeave.dataTransfer.types = []
+rootLeave.relatedTarget = null
+fire(leave, rootLeave)
+check('leaving the document clears the hint even with in-bounds coordinates', dragIsIdle())
+
+fire(hover, protectedHover(workspaceRow))
+windowListeners.get('blur')?.({})
+check('losing window focus clears the drag hint', dragIsIdle())
+
+fire(hover, protectedHover(workspaceRow))
+const emptyDrop = dragEvent(textarea, [])
+emptyDrop.dataTransfer = null
+fire(drop, emptyDrop)
+check('a drop without readable metadata clears the hint without being consumed', dragIsIdle() && emptyDrop.calls.stopped === 0)
+
+fire(windowListeners.get('dragend'), {})
+mock.timers.enable({ apis: ['setTimeout'] })
+try {
+  fire(hover, protectedHover(workspaceRow))
+  for (let i = 0; i < 10; i++) {
+    mock.timers.tick(300)
+    fire(hover, protectedHover(workspaceRow))
+  }
+  check('continued stationary dragover events keep the hint visible', snapshot().pending === true)
+  mock.timers.tick(1499)
+  check('a refreshed hint does not expire at an older hover deadline', snapshot().pending === true)
+  mock.timers.tick(1)
+  check('cancelling with no dragend or dragleave expires the stale hint', dragIsIdle())
+
+  fire(hover, protectedHover(workspaceRow))
+  fire(drop, dragEvent(textarea, [fileItem('a.txt')]))
+  dragStore.update((draft) => { draft.error = 'keep this error' })
+  mock.timers.tick(1500)
+  check('dropping cancels the hover timer so it cannot clear a later error', snapshot().error === 'keep this error')
+  fire(windowListeners.get('dragend'), {})
+} finally {
+  mock.timers.reset()
+}
+check('cancelling never creates a workspace', createCalls.length === 0)
+//#endregion
+
 //#region drop behavior
 ev = fire(drop, dragEvent(textarea, [dirItem('proj')]))
 check('folder drop on the composer falls through to the shipped flow', ev.calls.prevented === 0 && createCalls.length === 0)
@@ -388,6 +455,20 @@ check('the pending zone does not promise to create a workspace for a file', tree
 
 treeView = render({ active: false, folder: false, rect: null, names: '', error: 'boom', errorSeq: 2 })
 check('error render draws a toast with a per-show key', treeView.props.children[0].key === 'drop-to-workspace-error-2')
+//#endregion
+
+//#region disposal
+mock.timers.enable({ apis: ['setTimeout'] })
+try {
+  fire(hover, protectedHover(workspaceRow))
+  for (const cleanup of effectCleanups.toReversed()) cleanup()
+  check('disposing the plugin clears the hint and unregisters listeners', dragIsIdle() && documentListeners.size === 0 && windowListeners.size === 0)
+  dragStore.update((draft) => { draft.error = 'disposed' })
+  mock.timers.tick(1500)
+  check('disposing the plugin cancels its pending hover timer', snapshot().error === 'disposed')
+} finally {
+  mock.timers.reset()
+}
 //#endregion
 
 console.log(failures === 0 ? '\nSMOKE TEST PASSED' : `\nSMOKE TEST FAILED (${failures})`)
