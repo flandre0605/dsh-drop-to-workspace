@@ -1,11 +1,12 @@
 // Smoke test for the drop-to-workspace client factory.
 //
 // Simulates the client ModuleLoader + a minimal DOM, then drives the registered
-// listeners with fake drag events. Two properties matter here:
+// listeners with fake drag events. These properties matter here:
 //   1. zone scoping — a folder drop inside the sidebar's workspace region is
 //      consumed, and every drop outside it is left completely untouched;
 //   2. hover feedback — protected entries show a neutral hint, never a false
 //      folder claim, while identifiable files keep the native affordance.
+//   3. browser drops require explicit host paths, with cancellation and retry.
 import { readFileSync } from 'node:fs'
 import { mock } from 'node:test'
 
@@ -141,6 +142,10 @@ if (registration === undefined) throw new Error('registration not captured')
 if (registration.id !== 'dsh-drop-to-workspace') throw new Error(`bad id: ${registration.id}`)
 
 const createCalls = []
+let createError
+let openError
+let createWait
+let openWait
 const jsxStub = (type, props, key) => ({ type, props, key })
 const fakeRequire = (spec) => {
   switch (spec) {
@@ -159,7 +164,7 @@ const fakeRequire = (spec) => {
         },
       }
     case '@deepseek-ai/dsh-client-ui-primitives':
-      return { Toast: 'Toast', IconFolderOpenRegular: 'IconFolderOpenRegular', IconWarningOutlineRegular: 'IconWarningOutlineRegular' }
+      return { Toast: 'Toast', Modal: 'Modal', Input: 'Input', Button: 'Button', IconFolderOpenRegular: 'IconFolderOpenRegular', IconWarningOutlineRegular: 'IconWarningOutlineRegular' }
     default:
       throw new Error(`unexpected require: ${spec}`)
   }
@@ -176,11 +181,19 @@ const ctx = {
       return {
         async create({ path }) {
           createCalls.push(path)
+          if (createError) throw createError
+          if (createWait) await createWait
           return { workspaceId: `ws:${path}` }
         },
       }
     }
-    if (name === 'uiWorkspace') return { async openWorkspace(id) { ctx.opened = id } }
+    if (name === 'uiWorkspace') return {
+      async openWorkspace(id) {
+        if (openError) throw openError
+        if (openWait) await openWait
+        ctx.opened = id
+      },
+    }
     throw new Error(`ctx.get(${name})`)
   },
   locale: {
@@ -205,6 +218,7 @@ const slotYield = slotRegistrations[0].generator().next().value
 if (slotYield.options.id !== 'drop-to-workspace.drop-zone') throw new Error('slot id changed')
 const injected = slotYield.options.inject()
 const dragStore = injected.hooks.drag
+const directoryStore = injected.hooks.directory
 console.log('registration + slot wiring OK:', slotYield.options.id)
 
 for (const type of ['dragenter', 'dragover', 'drop']) {
@@ -223,7 +237,7 @@ const dragEvent = (target, items, extra = {}) => {
   const calls = { prevented: 0, stopped: 0 }
   return {
     target,
-    dataTransfer: { types: ['Files'], items, files: items.map((_, i) => ({ path: `C:\\proj\\${i}` })), dropEffect: '' },
+    dataTransfer: { types: ['Files'], items, files: items.map((item, i) => ({ name: item.webkitGetAsEntry?.()?.name, path: `C:\\proj\\${i}` })), dropEffect: '' },
     clientX: extra.clientX ?? 100,
     clientY: extra.clientY ?? 100,
     preventDefault: () => { calls.prevented += 1 },
@@ -414,9 +428,73 @@ check('file drop on the region falls through to the attachment flow', ev.calls.p
 const savedBridge = globalThis.__DSH_HOST_PATHS__
 delete globalThis.__DSH_HOST_PATHS__
 ev = fire(drop, dragEvent(workspaceRow, [dirItem('proj')]))
-check('without the desktop bridge the drop falls through', ev.calls.prevented === 0 && createCalls.length === 1)
+check('browser folder drops are consumed without guessing a host path', ev.calls.prevented === 1 && ev.calls.stopped === 1 && createCalls.length === 1)
+check('browser drops open a path dialog with the dropped name', directoryStore.getSnapshot().open && directoryStore.getSnapshot().names === 'proj' && directoryStore.getSnapshot().path === '')
 fire(hover, dragEvent(workspaceRow, [dirItem('proj')]))
-check('without the desktop bridge no affordance is shown', snapshot().folder === false && snapshot().active === false)
+check('browser folder hover shows the workspace zone', snapshot().folder === true && snapshot().active === true)
+fire(windowListeners.get('dragend'), {})
+
+await injected.createDirectoryWorkspace()
+check('empty browser paths never create a workspace', createCalls.length === 1)
+injected.setPath('C:\\actual\\project')
+injected.closeDirectory()
+await injected.createDirectoryWorkspace()
+check('cancelling a browser dialog never creates a workspace', !directoryStore.getSnapshot().open && createCalls.length === 1)
+
+ev = fire(drop, dragEvent(textarea, [dirItem('proj')]))
+check('browser folder drops outside Workspaces retain native behavior', ev.calls.stopped === 0 && !directoryStore.getSnapshot().open)
+ev = fire(drop, dragEvent(workspaceRow, [fileItem('a.txt')]))
+check('browser ordinary file drops retain native behavior', ev.calls.stopped === 0 && !directoryStore.getSnapshot().open)
+
+fire(drop, dragEvent(railHeaderButton, [dirItem('proj'), dirItem('other')]))
+injected.setPath('  /srv/project  ')
+fire(drop, dragEvent(workspaceRow, [dirItem('third')]))
+check('repeated drops preserve the pending path confirmation', directoryStore.getSnapshot().path === '  /srv/project  ')
+const creating = injected.createDirectoryWorkspace()
+check('browser creation is busy before the RPC settles', directoryStore.getSnapshot().busy)
+injected.closeDirectory()
+await injected.createDirectoryWorkspace()
+check('busy browser creation cannot be closed or submitted twice', directoryStore.getSnapshot().open && createCalls.length === 2)
+await creating
+check('browser creates only the explicitly confirmed host path and opens it', createCalls.at(-1) === '/srv/project' && ctx.opened === 'ws:/srv/project' && !directoryStore.getSnapshot().open && !directoryStore.getSnapshot().busy)
+
+fire(drop, dragEvent(workspaceRow, [dirItem('proj')]))
+injected.setPath('/missing')
+createError = new Error('directory does not exist')
+await injected.createDirectoryWorkspace()
+check('a rejected host path keeps the dialog open and shows the failure', directoryStore.getSnapshot().open && !directoryStore.getSnapshot().busy && directoryStore.getSnapshot().error.includes('directory does not exist'))
+createError = undefined
+injected.setPath('/srv/project')
+check('editing a failed path clears the old error', directoryStore.getSnapshot().error === null)
+openError = new Error('session unavailable')
+await injected.createDirectoryWorkspace()
+check('open failures are distinct from create failures', directoryStore.getSnapshot().open && directoryStore.getSnapshot().error.startsWith('directory.openFailed:'))
+openError = undefined
+await injected.createDirectoryWorkspace()
+check('retrying a browser failure can finish successfully', !directoryStore.getSnapshot().open && !directoryStore.getSnapshot().busy)
+
+mock.timers.enable({ apis: ['setTimeout'] })
+try {
+  fire(drop, dragEvent(workspaceRow, [dirItem('proj')]))
+  injected.setPath('/srv/slow')
+  createWait = new Promise(() => {})
+  const timeout = injected.createDirectoryWorkspace()
+  mock.timers.tick(15000)
+  await timeout
+  check('a hanging browser create times out and allows retry', directoryStore.getSnapshot().open && !directoryStore.getSnapshot().busy && directoryStore.getSnapshot().error.includes('timed out'))
+  createWait = undefined
+  openWait = new Promise(() => {})
+  const opening = injected.createDirectoryWorkspace()
+  for (let i = 0; i < 5; i++) await Promise.resolve()
+  mock.timers.tick(10000)
+  await opening
+  check('a hanging browser open times out without claiming creation failed', directoryStore.getSnapshot().open && !directoryStore.getSnapshot().busy && directoryStore.getSnapshot().error.startsWith('directory.openFailed:'))
+  injected.closeDirectory()
+} finally {
+  createWait = undefined
+  openWait = undefined
+  mock.timers.reset()
+}
 globalThis.__DSH_HOST_PATHS__ = savedBridge
 //#endregion
 
@@ -424,7 +502,11 @@ globalThis.__DSH_HOST_PATHS__ = savedBridge
 const component = slotYield.component
 const render = (state) => component({
   useDrag: (selector) => selector({ ...snapshot(), ...state }),
+  useDirectory: (selector) => selector(directoryStore.getSnapshot()),
   clearError: injected.clearError,
+  setPath: injected.setPath,
+  closeDirectory: injected.closeDirectory,
+  createDirectoryWorkspace: injected.createDirectoryWorkspace,
   t: (key) => key,
 })
 
@@ -455,6 +537,23 @@ check('the pending zone does not promise to create a workspace for a file', tree
 
 treeView = render({ active: false, folder: false, rect: null, names: '', error: 'boom', errorSeq: 2 })
 check('error render draws a toast with a per-show key', treeView.props.children[0].key === 'drop-to-workspace-error-2')
+
+delete globalThis.__DSH_HOST_PATHS__
+treeView = render({ active: true, folder: true, rect: region.rect, error: null })
+check('browser hover asks for path confirmation instead of promising automatic creation', treeView.props.children[0].props.children[1].props.children === 'zone.webTitle')
+treeView = render({ active: false, folder: false, pending: true, rect: null, error: null })
+check('browser protected hover explains host path confirmation', treeView.props.children[0].props.children[1].props.children[1].props.children === 'hint.webHow')
+fire(drop, dragEvent(workspaceRow, [dirItem('proj')]))
+treeView = render({ active: false, folder: false, pending: false, error: null })
+const dialog = treeView.props.children[0]
+check('browser path confirmation uses the existing modal primitive', dialog.type === 'Modal' && dialog.props.open)
+check('an empty path disables the create action', dialog.props.footer.props.children[1].props.disabled)
+const pathInput = dialog.props.children.props.children[1].props.children[1]
+pathInput.props.onChange({ target: { value: '/srv/test' } })
+check('the labeled path input updates the confirmation state', directoryStore.getSnapshot().path === '/srv/test')
+dialog.props.onClose()
+check('closing the modal cancels confirmation', !directoryStore.getSnapshot().open)
+globalThis.__DSH_HOST_PATHS__ = savedBridge
 //#endregion
 
 //#region disposal

@@ -6,6 +6,7 @@ Drag a folder from your file manager onto the sidebar's **Workspaces** region
 and a Workspace bound to that directory is created and opened — the same result
 as picking the folder through the built-in Workspace picker, without leaving
 the window.
+In a browser, confirm the folder path on the machine running Harness after dropping.
 
 ## What it does
 
@@ -15,11 +16,11 @@ the window.
   entries during hover, so `webkitGetAsEntry()` returns null. Unresolved items
   without a MIME type show a neutral "Files or folders" hint, covering both
   folders and files whose type is unknown without misclassifying either.
-- Hovering the Workspaces region (section header + the grouped/flat list) with
+- On desktop, hovering the Workspaces region (section header + the grouped/flat list) with
   a folder turns that card into a dashed invitation drawn over the region
   itself: "Release to create a workspace", or the conditional
   "Release folders to create a workspace" when the type is still unknown.
-- On drop there, each folder's real host path is resolved and
+- On desktop, dropping there resolves each folder's real host path and
   `workspaces.create({ path })` runs per folder; the first created Workspace
   opens immediately. Dropping a folder that is already a Workspace just
   re-opens it (host-side `resolveByPath` is idempotent).
@@ -38,18 +39,31 @@ region. The shipped intake decides whether it accepts a release from its own
 static `canAcceptDrop` gate rather than from the hover state this plugin
 suppresses, so a folder released elsewhere still takes the ordinary path.
 
-## Desktop only
+## Browser support
 
 Learning a dropped folder's absolute host path requires the Electron shell
 bridge (`window.__DSH_HOST_PATHS__`), which the packaged desktop app injects
-and an external browser page does not have. Outside the desktop app the plugin
-stays inert and folder drops fall through to the stock "desktop-only" notice
-from the attachment plugin.
+and an external browser page does not have.
+
+In a browser, drop a folder on **Workspaces** to open a path confirmation dialog.
+Enter the absolute path of an existing folder on the machine running Harness
+(for example `C:\Projects\demo` or `/home/user/demo`). Confirm to create and open
+the workspace, or cancel without creating anything. Invalid paths and open
+failures keep the dialog and its input available for retry.
+
+Browsers provide names, not absolute paths. The plugin **does not upload, copy,
+or traverse folder contents**, and never guesses a path from a name. With a
+remote Harness host, the directory must already exist on that remote machine;
+a browser-local path is not enough. Each browser confirmation binds one folder,
+even if multiple folders were dropped together.
+
+Drops outside Workspaces still use the native attachment flow, including its
+desktop-only folder warning.
 
 ## Install
 
-The plugin is only meaningful in the desktop app (see above), so it belongs in
-the **desktop** profile.
+Install into the profile you actually use: **desktop** for the desktop app,
+or **web** for a standalone web server.
 
 **Through the plugin panel**
 
@@ -67,8 +81,14 @@ The full address `https://github.com/flandre0605/dsh-drop-to-workspace` works to
 dsh plugin --profile desktop add github:flandre0605/dsh-drop-to-workspace
 ```
 
-Either way the desktop app must be **fully restarted** afterwards so the profile
-reboots with the new bundle.
+For a standalone web server:
+
+```powershell
+dsh plugin --profile web add github:flandre0605/dsh-drop-to-workspace
+```
+
+Restart the corresponding desktop app or web server after installing or updating.
+Also refresh the browser page to load the new bundle.
 
 The command reconciles `dsh.profile.bundles` against installed packages and
 appends `dsh-drop-to-workspace` to the bundle stack; the profile boot then
@@ -137,9 +157,9 @@ follows light/dark themes without depending on internal design tokens.
 
 ## Behavior notes
 
-- Multiple folders in one drop create multiple Workspaces; the first one opens
+- On desktop, multiple folders in one drop create multiple Workspaces; the first one opens
   (the main view switches to it).
-- A mixed file + folder drop inside the region creates Workspaces for the
+- A mixed file + folder drop inside the region handles only the
   folders and skips the files (that drop is fully consumed).
-- A refused create (e.g. an unreachable path) shows a localized failure toast;
+- A refused create (e.g. an unreachable path) shows a localized failure message;
   the folder simply does not become a Workspace.
