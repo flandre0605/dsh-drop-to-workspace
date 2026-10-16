@@ -6,7 +6,7 @@ Drag a folder from your file manager onto the sidebar's **Workspaces** region
 and a Workspace bound to that directory is created and opened — the same result
 as picking the folder through the built-in Workspace picker, without leaving
 the window.
-In a browser, confirm the folder path on the machine running Harness after dropping.
+In a browser, dropping opens Harness's built-in directory picker. Select a directory without typing its path.
 
 ## What it does
 
@@ -45,17 +45,22 @@ Learning a dropped folder's absolute host path requires the Electron shell
 bridge (`window.__DSH_HOST_PATHS__`), which the packaged desktop app injects
 and an external browser page does not have.
 
-In a browser, drop a folder on **Workspaces** to open a path confirmation dialog.
-Enter the absolute path of an existing folder on the machine running Harness
-(for example `C:\Projects\demo` or `/home/user/demo`). Confirm to create and open
-the workspace, or cancel without creating anything. Invalid paths and open
-failures keep the dialog and its input available for retry.
+In a browser, drop a folder on **Workspaces** to automatically open Harness's
+built-in directory picker. Browse and select the directory, then confirm to
+create and open the workspace. No manual absolute path is required.
+Selection, cancellation, creation, and error recovery reuse the sidebar's
+existing add-workspace flow. Repeated drops do not interrupt an active picker.
 
 Browsers provide names, not absolute paths. The plugin **does not upload, copy,
 or traverse folder contents**, and never guesses a path from a name. With a
 remote Harness host, the directory must already exist on that remote machine;
-a browser-local path is not enough. Each browser confirmation binds one folder,
-even if multiple folders were dropped together.
+a browser-local directory is not enough. The picker cannot automatically locate
+the dropped folder: selecting it once is still required. Multiple dropped folders
+open one picker, rather than automatically creating multiple workspaces.
+
+If the current Harness version or plugin composition has no compatible picker
+entry, a notice directs users to the add button beside Workspaces. The plugin
+does not silently fall back to typing or guessing paths.
 
 Drops outside Workspaces still use the native attachment flow, including its
 desktop-only folder warning.

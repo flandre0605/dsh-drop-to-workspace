@@ -10,7 +10,7 @@
 # plugin row) exactly like a manual cordis.patch.yml mount line.
 #
 # Use `--profile web` for a standalone web server. Browsers ask users to
-# confirm a host path instead of using the desktop shell's path bridge.
+# choose a directory with Harness's picker instead of the desktop path bridge.
 - insert:
     - id: drop-to-workspace
       name: 'dsh-drop-to-workspace'
